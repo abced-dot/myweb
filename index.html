@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>点状曲线烟花效果</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .firework-cursor {
+                cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14M5 12h14M9 9l6 6M6 18l12-12'/%3E%3C/svg%3E") 12 12, auto;
+            }
+        }
+    </style>
+    
+    <style>
+        /* 星星闪烁动画 */
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+        
+        /* 烟花发射动画 */
+        @keyframes launch {
+            from { 
+                transform: translateY(100vh) scale(0.8); 
+                opacity: 1;
+            }
+            to { 
+                transform: translateY(var(--target-y)) scale(1); 
+                opacity: 0.6;
+            }
+        }
+        
+        /* 点扩散动画 */
+        @keyframes dot-expand {
+            0% { transform: scale(0); opacity: 0; }
+            20% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(1); opacity: 0; }
+        }
+        
+        /* 粒子飞散动画 */
+        @keyframes particle-fly {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            30% { opacity: 1; }
+            100% { transform: translate(var(--x-offset), var(--y-offset)) scale(0.2); opacity: 0; }
+        }
+        
+        /* 尾部粒子下落动画 */
+        @keyframes tail-fall {
+            0% { transform: translateY(0) rotate(0deg); opacity: 0.8; }
+            100% { transform: translateY(80px) rotate(1080deg); opacity: 0; }
+        }
+        
+        /* 中心闪光效果 */
+        @keyframes flash {
+            0% { transform: scale(0); opacity: 1; }
+            40% { transform: scale(2); opacity: 1; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="bg-gray-950 min-h-screen overflow-hidden font-sans firework-cursor">
+    <!-- 背景星星 -->
+    <div id="stars" class="fixed inset-0 z-0"></div>
+    
+    <!-- 信息面板 -->
+    <div class="fixed top-0 left-0 w-full p-4 z-10 text-white/80 flex justify-between items-center transition-opacity duration-1000">
+        <div>
+            <h1 class="text-xl font-bold flex items-center">
+                <i class="fa fa-fire mr-2 text-yellow-400"></i>点状曲线烟花效果
+            </h1>
+        </div>
+        <div class="text-sm">
+            <span>点击屏幕发射烟花</span>
+        </div>
+    </div>
+    
+    <!-- 烟花容器 -->
+    <div id="fireworks-container" class="fixed inset-0 z-0"></div>
+    
+    <script>
+        // 创建星星背景
+        function createStars() {
+            const starsContainer = document.getElementById('stars');
+            const starCount = window.innerWidth < 768 ? 150 : 300;
+            
+            // 清空现有星星
+            starsContainer.innerHTML = '';
+            
+            for (let i = 0; i < starCount; i++) {
+                const star = document.createElement('div');
+                const size = Math.random() * 2 + 0.5;
+                const opacity = Math.random() * 0.7 + 0.2;
+                const duration = Math.random() * 8 + 2; // 闪烁周期
+                const delay = Math.random() * 5; // 随机延迟
+                
+                // 随机决定是圆点还是十字星
+                const isCross = Math.random() > 0.7;
+                
+                if (isCross) {
+                    star.innerHTML = `
+                        <div class="absolute w-full h-[2px] bg-white rounded-full"></div>
+                        <div class="absolute w-[2px] h-full bg-white rounded-full"></div>
+                    `;
+                }
+                
+                star.style.cssText = `
+                    position: absolute;
+                    width: ${size}px;
+                    height: ${size}px;
+                    ${!isCross ? 'background: white;' : ''}
+                    border-radius: ${isCross ? '0' : '50%'};
+                    top: ${Math.random() * 100}vh;
+                    left: ${Math.random() * 100}vw;
+                    opacity: ${opacity};
+                    animation: twinkle ${duration}s infinite ease-in-out;
+                    animation-delay: ${delay}s;
+                    z-index: 0;
+                `;
+                
+                starsContainer.appendChild(star);
+            }
+        }
+        
+        // 生成随机曲线点，创建自然曲线
+        function generateCurvePoints(centerX, centerY, angle, length, pointCount) {
+            const points = [];
+            // 基础角度（弧度）
+            const baseAngle = angle * Math.PI / 180;
+            
+            // 曲线总长度的随机变化
+            const curveLength = length * (0.8 + Math.random() * 0.4);
+            
+            // 随机弯曲度（-30到30度）
+            const curveAngle = (Math.random() - 0.5) * 60;
+            const curveRadian = curveAngle * Math.PI / 180;
+            
+            // 生成曲线上的点
+            for (let i = 0; i <= pointCount; i++) {
+                const t = i / pointCount;
+                // 基础位置（直线）
+                const baseX = centerX + Math.cos(baseAngle) * curveLength * t;
+                const baseY = centerY + Math.sin(baseAngle) * curveLength * t;
+                
+                // 应用曲线偏移
+                const curveOffset = Math.sin(t * Math.PI) * curveLength * 0.15 * Math.sin(curveRadian);
+                const offsetX = Math.cos(baseAngle + Math.PI/2) * curveOffset;
+                const offsetY = Math.sin(baseAngle + Math.PI/2) * curveOffset;
+                
+                points.push({
+                    x: baseX + offsetX,
+                    y: baseY + offsetY,
+                    progress: t // 0到1的进度值
+                });
+            }
+            
+            return points;
+        }
+        
+        // 烟花类型定义 - 点状曲线形态
+        const fireworkTypes = {
+            // 点阵型烟花
+            dotted: {
+                lineCount: 25,        // 线条数量
+                lineLength: 200,      // 线条长度
+                pointsPerLine: 15,    // 每条线上的点数
+                pointSizeRange: [1.5, 3], // 点大小范围
+                pointDensity: 1,      // 点密度（1为标准）
+                branches: false       // 是否有分支
+            },
+            // 稀疏点阵型烟花
+            sparse: {
+                lineCount: 20,
+                lineLength: 220,
+                pointsPerLine: 10,
+                pointSizeRange: [2, 4],
+                pointDensity: 0.8,    // 点更稀疏
+                branches: false
+            },
+            // 分支点阵型烟花
+            branching: {
+                lineCount: 18,
+                lineLength: 210,
+                pointsPerLine: 12,
+                pointSizeRange: [1.5, 3],
+                pointDensity: 1,
+                branches: true,       // 有分支
+                branchCount: 2        // 每个主线条的分支数
+            },
+            // 渐变点阵型烟花
+            gradient: {
+                lineCount: 22,
+                lineLength: 190,
+                pointsPerLine: 16,
+                pointSizeRange: [1, 3.5],
+                pointDensity: 1.1,    // 点更密集
+                branches: false,
+                sizeFade: true        // 点大小随距离衰减
+            }
+        };
+        
+        // 烟花颜色组合
+        const colorSchemes = [
+            ['#ff3333', '#ff6666', '#ff9999', '#ffcccc'], // 红色系
+            ['#3333ff', '#6666ff', '#9999ff', '#ccccff'], // 蓝色系
+            ['#33ff33', '#66ff66', '#99ff99', '#ccffcc'], // 绿色系
+            ['#ffff33', '#ffff66', '#ffff99', '#ffffcc'], // 黄色系
+            ['#9933ff', '#b366ff', '#cc99ff', '#e6ccff'], // 紫色系
+            ['#ff3333', '#33ff33', '#3333ff', '#ffff33'], // 混合色
+            ['#ff8800', '#ffaa00', '#ffcc00', '#ffee00']  // 橙色系
+        ];
+        
+        // 烟花类
+        class Firework {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.container = document.getElementById('fireworks-container');
+                
+                // 随机选择烟花类型
+                const typeKeys = Object.keys(fireworkTypes);
+                this.type = fireworkTypes[typeKeys[Math.floor(Math.random() * typeKeys.length)]];
+                
+                // 随机选择颜色方案
+                this.colors = colorSchemes[Math.floor(Math.random() * colorSchemes.length)];
+                
+                // 发射速度（高度越高，速度越慢）
+                this.launchSpeed = (window.innerHeight - this.y) / 1200;
+                
+                // 爆炸持续时间
+                this.explosionDuration = Math.random() * 0.5 + 2;
+            }
+            
+            // 获取随机颜色（从当前颜色方案中）
+            getRandomColor() {
+                return this.colors[Math.floor(Math.random() * this.colors.length)];
+            }
+            
+            // 创建发射尾迹
+            createTrail() {
+                const trail = document.createElement('div');
+                const trailLength = Math.random() * 40 + 60;
+                
+                trail.style.cssText = `
+                    position: absolute;
+                    width: 2px;
+                    height: ${trailLength}px;
+                    background: linear-gradient(to top, ${this.getRandomColor()}, transparent);
+                    left: ${this.x}px;
+                    bottom: 0;
+                    z-index: 1;
+                    --target-y: ${window.innerHeight - this.y}px;
+                    box-shadow: 0 0 6px 1px ${this.getRandomColor()};
+                `;
+                
+                document.body.appendChild(trail);
+                
+                // 应用发射动画
+                trail.style.animation = `launch ${this.launchSpeed}s cubic-bezier(0.2, 0.8, 0.8, 1) forwards`;
+                
+                // 创建一些随机火花
+                const sparkCount = Math.floor(this.launchSpeed * 30);
+                for (let i = 0; i < sparkCount; i++) {
+                    setTimeout(() => {
+                        if (!trail.parentNode) return;
+                        
+                        const spark = document.createElement('div');
+                        const size = Math.random() * 2 + 1;
+                        const offsetX = (Math.random() - 0.5) * 10;
+                        const fallSpeed = Math.random() * 0.8 + 0.4;
+                        
+                        spark.style.cssText = `
+                            position: absolute;
+                            width: ${size}px;
+                            height: ${size}px;
+                            background: ${this.getRandomColor()};
+                            border-radius: 50%;
+                            left: ${this.x + offsetX}px;
+                            top: ${window.innerHeight - (i / sparkCount) * (window.innerHeight - this.y)}px;
+                            opacity: 0.8;
+                            box-shadow: 0 0 3px 1px ${this.getRandomColor()};
+                            z-index: 2;
+                        `;
+                        
+                        document.body.appendChild(spark);
+                        
+                        // 火花下落动画
+                        spark.animate([
+                            { transform: 'translateY(0) rotate(0deg)' },
+                            { transform: `translateY(${Math.random() * 30 + 20}px) rotate(${Math.random() * 360}deg)` }
+                        ], {
+                            duration: fallSpeed * 1000,
+                            easing: 'cubic-bezier(0.1, 0.8, 0.9, 1)'
+                        });
+                        
+                        // 火花淡出
+                        setTimeout(() => {
+                            spark.style.opacity = '0';
+                            spark.style.transition = 'opacity 0.3s ease-out';
+                            setTimeout(() => spark.remove(), 300);
+                        }, fallSpeed * 700);
+                    }, i * (this.launchSpeed * 1000 / sparkCount));
+                }
+                
+                // 动画结束后移除尾迹
+                setTimeout(() => {
+                    trail.style.opacity = '0';
+                    trail.style.transition = 'opacity 0.3s ease-out';
+                    setTimeout(() => trail.remove(), 300);
+                }, this.launchSpeed * 1000);
+            }
+            
+            // 发射烟花
+            launch() {
+                this.createTrail();
+                
+                // 等待发射到达目标位置后爆炸
+                setTimeout(() => {
+                    this.explode();
+                }, this.launchSpeed * 1000);
+            }
+            
+            // 爆炸效果 - 点状曲线
+            explode() {
+                // 创建中心闪光
+                const flash = document.createElement('div');
+                flash.style.cssText = `
+                    position: absolute;
+                    width: 12px;
+                    height: 12px;
+                    background: white;
+                    border-radius: 50%;
+                    left: ${this.x}px;
+                    top: ${this.y}px;
+                    transform: translate(-50%, -50%);
+                    box-shadow: 0 0 20px 10px ${this.getRandomColor()};
+                    z-index: 3;
+                `;
+                document.body.appendChild(flash);
+                flash.style.animation = `flash 0.6s ease-out forwards`;
+                setTimeout(() => flash.remove(), 600);
+                
+                // 创建点状曲线
+                for (let i = 0; i < this.type.lineCount; i++) {
+                    // 计算角度 - 360度均匀分布
+                    const angle = (i / this.type.lineCount) * 360;
+                    
+                    // 生成曲线上的点
+                    const points = generateCurvePoints(
+                        this.x, 
+                        this.y, 
+                        angle, 
+                        this.type.lineLength,
+                        this.type.pointsPerLine
+                    );
+                    
+                    // 线条属性
+                    const color = this.getRandomColor();
+                    const baseDuration = this.explosionDuration * (0.9 + Math.random() * 0.3);
+                    
+                    // 创建点
+                    this.createDottedLine(points, color, baseDuration);
+                    
+                    // 如果有分支，创建分支线条
+                    if (this.type.branches && Math.random() > 0.3) {
+                        // 选择一个中间点作为分支起点
+                        const branchStartIndex = Math.floor(points.length * 0.4 + Math.random() * points.length * 0.3);
+                        const branchStartPoint = points[branchStartIndex];
+                        
+                        this.createBranches(
+                            branchStartPoint.x, 
+                            branchStartPoint.y, 
+                            angle, 
+                            color, 
+                            baseDuration * (1 - branchStartPoint.progress * 0.5)
+                        );
+                    }
+                }
+            }
+            
+            // 创建点状线条
+            createDottedLine(points, color, baseDuration) {
+                points.forEach((point, index) => {
+                    // 随机跳过一些点，创建不均匀的点分布
+                    if (Math.random() > this.type.pointDensity) return;
+                    
+                    // 计算点大小
+                    let size;
+                    if (this.type.sizeFade) {
+                        // 渐变型：离中心越远越小
+                        size = this.type.pointSizeRange[1] * (1 - point.progress * 0.8) + 
+                               this.type.pointSizeRange[0] * point.progress;
+                    } else {
+                        // 标准：随机大小在范围内
+                        size = this.type.pointSizeRange[0] + 
+                               Math.random() * (this.type.pointSizeRange[1] - this.type.pointSizeRange[0]);
+                    }
+                    
+                    // 创建点元素
+                    const dot = document.createElement('div');
+                    dot.style.cssText = `
+                        position: absolute;
+                        width: ${size}px;
+                        height: ${size}px;
+                        background: ${color};
+                        border-radius: 50%;
+                        left: ${point.x}px;
+                        top: ${point.y}px;
+                        transform: translate(-50%, -50%);
+                        box-shadow: 0 0 4px 1px ${color};
+                        z-index: 2;
+                        opacity: 0;
+                    `;
+                    
+                    this.container.appendChild(dot);
+                    
+                    // 点的动画延迟（从中心向外依次出现）
+                    const delay = baseDuration * 0.6 * point.progress;
+                    const animDuration = baseDuration * (1 - point.progress * 0.3);
+                    
+                    // 应用动画
+                    setTimeout(() => {
+                        dot.style.animation = `dot-expand ${animDuration}s ease-out forwards`;
+                        
+                        // 给部分点添加飞散效果
+                        if (Math.random() > 0.7 && index > 2) {
+                            this.createFlyingParticle(dot, point, color, animDuration * 0.6);
+                        }
+                    }, delay * 1000);
+                    
+                    // 动画结束后移除
+                    setTimeout(() => {
+                        if (dot.parentNode) {
+                            dot.remove();
+                        }
+                    }, (delay + animDuration) * 1000);
+                });
+            }
+            
+            // 创建分支线条
+            createBranches(startX, startY, mainAngle, color, baseDuration) {
+                // 创建1-2个分支
+                const branchCount = this.type.branchCount;
+                for (let b = 0; b < branchCount; b++) {
+                    // 分支角度（与主线成40-80度）
+                    const branchAngle = mainAngle + (Math.random() > 0.5 ? 1 : -1) * (40 + Math.random() * 40);
+                    const branchLength = this.type.lineLength * (0.3 + Math.random() * 0.3);
+                    
+                    // 生成分支上的点
+                    const points = generateCurvePoints(
+                        startX, 
+                        startY, 
+                        branchAngle, 
+                        branchLength,
+                        Math.floor(this.type.pointsPerLine * 0.6) // 分支点数量较少
+                    );
+                    
+                    // 分支点的大小比主线稍小
+                    const originalSizeRange = this.type.pointSizeRange;
+                    this.type.pointSizeRange = [
+                        originalSizeRange[0] * 0.7,
+                        originalSizeRange[1] * 0.7
+                    ];
+                    
+                    // 创建分支点
+                    this.createDottedLine(points, color, baseDuration * 0.7);
+                    
+                    // 恢复原始大小范围
+                    this.type.pointSizeRange = originalSizeRange;
+                }
+            }
+            
+            // 创建飞散的粒子
+            createFlyingParticle(dot, point, color, delay) {
+                setTimeout(() => {
+                    // 获取点的当前位置
+                    const rect = dot.getBoundingClientRect();
+                    const containerRect = this.container.getBoundingClientRect();
+                    const currentX = rect.left - containerRect.left + rect.width / 2;
+                    const currentY = rect.top - containerRect.top + rect.height / 2;
+                    
+                    // 移除原始点
+                    dot.remove();
+                    
+                    // 创建飞散粒子
+                    const particle = document.createElement('div');
+                    const size = parseFloat(dot.style.width) * 0.8;
+                    
+                    // 飞散方向和距离
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = Math.random() * 30 + 20;
+                    const xOffset = Math.cos(angle) * distance;
+                    const yOffset = Math.sin(angle) * distance;
+                    
+                    particle.style.cssText = `
+                        position: absolute;
+                        width: ${size}px;
+                        height: ${size}px;
+                        background: ${color};
+                        border-radius: 50%;
+                        left: ${currentX}px;
+                        top: ${currentY}px;
+                        transform: translate(-50%, -50%);
+                        --x-offset: ${xOffset}px;
+                        --y-offset: ${yOffset}px;
+                        box-shadow: 0 0 3px 1px ${color};
+                        z-index: 2;
+                    `;
+                    
+                    this.container.appendChild(particle);
+                    
+                    // 应用飞散动画
+                    const duration = Math.random() * 0.8 + 1.2;
+                    particle.style.animation = `particle-fly ${duration}s ease-out forwards`;
+                    
+                    // 动画结束后移除
+                    setTimeout(() => {
+                        if (particle.parentNode) {
+                            particle.remove();
+                        }
+                    }, duration * 1000);
+                }, delay * 1000);
+            }
+        }
+        
+        // 页面加载完成后初始化
+        window.addEventListener('load', () => {
+            createStars();
+            
+            // 点击屏幕发射烟花
+            document.addEventListener('click', (e) => {
+                // 每次点击发射1-2个烟花
+                const count = Math.floor(Math.random() * 2) + 1;
+                for (let i = 0; i < count; i++) {
+                    const offsetX = (Math.random() - 0.5) * 100;
+                    const offsetY = (Math.random() - 0.5) * 50;
+                    const firework = new Firework(e.clientX + offsetX, e.clientY + offsetY);
+                    firework.launch();
+                }
+            });
+            
+            // 自动发射烟花
+            function autoFireworks() {
+                if (Math.random() > 0.6) { // 60%概率发射
+                    const x = Math.random() * window.innerWidth;
+                    const y = Math.random() * window.innerHeight * 0.6 + 80;
+                    
+                    // 随机发射1-2个
+                    const count = Math.floor(Math.random() * 2) + 1;
+                    for (let i = 0; i < count; i++) {
+                        const offsetX = (Math.random() - 0.5) * 150;
+                        const offsetY = (Math.random() - 0.5) * 70;
+                        const firework = new Firework(x + offsetX, y + offsetY);
+                        firework.launch();
+                    }
+                }
+                
+                // 2-6秒后再次尝试发射
+                setTimeout(autoFireworks, Math.random() * 4000 + 2000);
+            }
+            
+            // 开始自动发射
+            setTimeout(autoFireworks, 2000);
+        });
+        
+        // 响应窗口大小变化
+        window.addEventListener('resize', () => {
+            createStars();
+        });
+    </script>
+</body>
+</html>
+    
